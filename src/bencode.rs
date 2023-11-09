@@ -1,3 +1,5 @@
+use serde_json::Map;
+
 pub struct Bencode<'a> {
     string: &'a str,
     position: usize,
@@ -13,9 +15,11 @@ impl<'a> Bencode<'a> {
 
     pub fn decode(&mut self) -> serde_json::Value {
         match self.peek() {
+            Some('d') => self.decode_dictionary(),
             Some('l') => self.decode_list(),
             Some('i') => self.decode_integer(),
-            Some(_) => self.decode_string(),
+            Some(c) if c.is_ascii_digit() => self.decode_string(),
+            Some(c) => panic!("Unexpected character: {}", c),
             None => panic!("Unexpected end of input"),
         }
     }
@@ -48,6 +52,23 @@ impl<'a> Bencode<'a> {
         self.consume('e').expect("Expected 'e' at end of list");
 
         serde_json::Value::Array(values)
+    }
+
+    fn decode_dictionary(&mut self) -> serde_json::Value {
+        self.consume('d')
+            .expect("Expected 'd' at start of dictionary");
+
+        let mut map = Map::new();
+        while self.peek() != Some('e') {
+            let key = self.decode_string().to_string();
+            let key_stripped = key.strip_prefix('"').unwrap().strip_suffix('"').unwrap();
+            let value = self.decode();
+            map.insert(key_stripped.to_string(), value);
+        }
+
+        self.consume('e')
+            .expect("Expected 'e' at end of dictionary");
+        serde_json::Value::Object(map)
     }
 
     fn decode_integer_number(&mut self) -> i64 {
@@ -145,6 +166,19 @@ mod tests {
         assert_eq!(
             decoded_value,
             serde_json::json!([serde_json::json!([467, "blueberry".to_string()])])
+        );
+    }
+
+    #[test]
+    fn dictionary() {
+        let mut bencode = super::Bencode::new("d3:foo3:bar5:helloi52ee");
+        let decoded_value = bencode.decode();
+        assert_eq!(
+            decoded_value,
+            serde_json::json!({
+                "foo".to_string(): "bar".to_string(),
+                "hello".to_string(): 52
+            })
         );
     }
 }
