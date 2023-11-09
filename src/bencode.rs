@@ -1,16 +1,13 @@
 use serde_json::Map;
 
 pub struct Bencode<'a> {
-    string: &'a str,
+    bytes: &'a [u8],
     position: usize,
 }
 
 impl<'a> Bencode<'a> {
-    pub fn new(string: &'a str) -> Self {
-        Self {
-            string,
-            position: 0,
-        }
+    pub fn new(bytes: &'a [u8]) -> Self {
+        Self { bytes, position: 0 }
     }
 
     pub fn decode(&mut self) -> serde_json::Value {
@@ -28,9 +25,19 @@ impl<'a> Bencode<'a> {
         let string_length = self.decode_integer_number();
         self.consume(':').expect("Expected ':' after string length");
 
-        let string_slice = &self.string[self.position..self.position + string_length as usize];
+        let string_slice = &self.bytes[self.position..self.position + string_length as usize];
         self.position += string_length as usize;
-        serde_json::Value::String(string_slice.to_string())
+
+        if let Ok(string) = std::str::from_utf8(string_slice) {
+            serde_json::Value::String(string.to_string())
+        } else {
+            serde_json::Value::Array(
+                string_slice
+                    .iter()
+                    .map(|b| serde_json::Value::Number((*b).into()))
+                    .collect(),
+            )
+        }
     }
 
     fn decode_integer(&mut self) -> serde_json::Value {
@@ -86,13 +93,13 @@ impl<'a> Bencode<'a> {
     }
 
     fn next(&mut self) -> Option<char> {
-        let next_char = self.string.chars().nth(self.position);
+        let next_char = self.bytes.get(self.position);
         self.position += 1;
-        next_char
+        next_char.map(|b| *b as char)
     }
 
     fn peek(&self) -> Option<char> {
-        self.string.chars().nth(self.position)
+        self.bytes.get(self.position).map(|b| *b as char)
     }
 
     fn consume(&mut self, expected: char) -> Result<char, String> {
@@ -110,7 +117,7 @@ impl<'a> Bencode<'a> {
 mod tests {
     #[test]
     fn hello_string() {
-        let mut bencode = super::Bencode::new("5:hello");
+        let mut bencode = super::Bencode::new("5:hello".as_bytes());
         let decoded_value = bencode.decode();
         assert_eq!(
             decoded_value,
@@ -120,7 +127,7 @@ mod tests {
 
     #[test]
     fn long_string() {
-        let mut bencode = super::Bencode::new("11:hello world");
+        let mut bencode = super::Bencode::new("11:hello world".as_bytes());
         let decoded_value = bencode.decode();
         assert_eq!(
             decoded_value,
@@ -130,21 +137,21 @@ mod tests {
 
     #[test]
     fn positive_integer() {
-        let mut bencode = super::Bencode::new("i123e");
+        let mut bencode = super::Bencode::new("i123e".as_bytes());
         let decoded_value = bencode.decode();
         assert_eq!(decoded_value, serde_json::Value::Number(123.into()));
     }
 
     #[test]
     fn negative_integer() {
-        let mut bencode = super::Bencode::new("i-123e");
+        let mut bencode = super::Bencode::new("i-123e".as_bytes());
         let decoded_value = bencode.decode();
         assert_eq!(decoded_value, serde_json::Value::Number((-123).into()));
     }
 
     #[test]
     fn simple_list() {
-        let mut bencode = super::Bencode::new("l4:spam4:eggse");
+        let mut bencode = super::Bencode::new("l4:spam4:eggse".as_bytes());
         let decoded_value = bencode.decode();
         assert_eq!(
             decoded_value,
@@ -154,14 +161,14 @@ mod tests {
 
     #[test]
     fn multi_type_list() {
-        let mut bencode = super::Bencode::new("li123e5:helloe");
+        let mut bencode = super::Bencode::new("li123e5:helloe".as_bytes());
         let decoded_value = bencode.decode();
         assert_eq!(decoded_value, serde_json::json!([123, "hello".to_string()]));
     }
 
     #[test]
     fn list_inside_a_list() {
-        let mut bencode = super::Bencode::new("lli467e9:blueberryee");
+        let mut bencode = super::Bencode::new("lli467e9:blueberryee".as_bytes());
         let decoded_value = bencode.decode();
         assert_eq!(
             decoded_value,
@@ -171,7 +178,7 @@ mod tests {
 
     #[test]
     fn dictionary() {
-        let mut bencode = super::Bencode::new("d3:foo3:bar5:helloi52ee");
+        let mut bencode = super::Bencode::new("d3:foo3:bar5:helloi52ee".as_bytes());
         let decoded_value = bencode.decode();
         assert_eq!(
             decoded_value,
