@@ -1,5 +1,6 @@
+use serde::Serialize;
 use sha1::Digest;
-use std::{collections::HashMap, fs::File, io::Read, path::Path};
+use std::{collections::HashMap, fs::File, io::Read, net::Ipv4Addr, path::Path};
 
 use crate::bencode::{Bencode, Value};
 
@@ -43,8 +44,76 @@ impl Torrent {
 
         let mut hasher = sha1::Sha1::new();
         hasher.update(&encoded);
-        let hash = hasher.finalize();
-        format!("{:x}", hash)
+        hex::encode(hasher.finalize())
+    }
+
+    pub fn get_peers(&self) -> Vec<Ipv4Addr> {
+        let client = reqwest::blocking::Client::new();
+
+        let request = Request::new("00000000000000000000".to_string(), 6881, self.info.length);
+
+        let mut encoded_info_hash = String::new();
+        for chunk in self.info_hash().as_bytes().chunks(2) {
+            let chunk_str = format!("%{}{}", chunk[0] as char, chunk[1] as char);
+            encoded_info_hash.push_str(&chunk_str);
+        }
+
+        let encoded = serde_urlencoded::to_string(request);
+
+        let url = format!(
+            "{}?info_hash={}&{}",
+            self.announce,
+            encoded_info_hash,
+            encoded.unwrap()
+        );
+
+        let response = client.get(url).send().expect("Failed to send request");
+
+        let decoded = Bencode::new(&response.bytes().expect("Failed to read response")).decode();
+        let decoded_hash_map = match decoded {
+            Value::Dictionary(hash_map) => hash_map,
+            _ => panic!("Expected tracker response to decode to a dictionary"),
+        };
+
+        let peers = match decoded_hash_map.get("peers") {
+            Some(Value::Blob(blob)) => blob,
+            _ => panic!("Decoded tracker response did not contain a peers blob"),
+        };
+
+        peers
+            .chunks_exact(6)
+            .map(|chunk| {
+                let mut array = [0; 6];
+                array.copy_from_slice(chunk);
+                let ip = Ipv4Addr::new(array[0], array[1], array[2], array[3]);
+                let port = u16::from_be_bytes([array[4], array[5]]);
+                println!("{}:{}", ip, port);
+                ip
+            })
+            .collect()
+    }
+}
+
+#[derive(Debug, Serialize)]
+struct Request {
+    peer_id: String,
+    port: u16,
+    uploaded: usize,
+    downloaded: usize,
+    left: usize,
+    compact: u8,
+}
+
+impl Request {
+    fn new(peer_id: String, port: u16, left: usize) -> Self {
+        Self {
+            peer_id,
+            port,
+            uploaded: 0,
+            downloaded: 0,
+            left,
+            compact: 1,
+        }
     }
 }
 

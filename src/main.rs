@@ -15,6 +15,7 @@ struct Cli {
 enum Commands {
     Decode { encoded_value: String },
     Info { torrent_file: String },
+    Peers { torrent_file: String },
 }
 
 // Usage: your_bittorrent.sh decode "<encoded_value>"
@@ -35,6 +36,13 @@ fn main() {
             println!("Piece Hashes:");
             for hash in torrent.info.pieces {
                 println!("{}", hex::encode(hash));
+            }
+        }
+        Commands::Peers { torrent_file } => {
+            let torrent = Torrent::open(torrent_file);
+            let peers = torrent.get_peers();
+            for peer in peers {
+                println!("{}", peer);
             }
         }
     }
