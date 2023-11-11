@@ -30,6 +30,7 @@ fn main() {
             let torrent = Torrent::open(torrent_file);
             println!("Tracker URL: {}", torrent.announce);
             println!("Length: {}", torrent.info.length);
+            println!("Info Hash: {}", torrent.info_hash());
         }
     }
 }
