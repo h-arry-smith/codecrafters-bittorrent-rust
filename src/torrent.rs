@@ -1,6 +1,12 @@
 use serde::Serialize;
 use sha1::Digest;
-use std::{collections::HashMap, fs::File, io::Read, net::Ipv4Addr, path::Path};
+use std::{
+    collections::HashMap,
+    fs::File,
+    io::Read,
+    net::{Ipv4Addr, SocketAddrV4},
+    path::Path,
+};
 
 use crate::bencode::{Bencode, Value};
 
@@ -47,7 +53,7 @@ impl Torrent {
         hex::encode(hasher.finalize())
     }
 
-    pub fn get_peers(&self) -> Vec<Ipv4Addr> {
+    pub fn get_peers(&self) -> Vec<SocketAddrV4> {
         let client = reqwest::blocking::Client::new();
 
         let request = Request::new("00000000000000000000".to_string(), 6881, self.info.length);
@@ -88,7 +94,7 @@ impl Torrent {
                 let ip = Ipv4Addr::new(array[0], array[1], array[2], array[3]);
                 let port = u16::from_be_bytes([array[4], array[5]]);
                 println!("{}:{}", ip, port);
-                ip
+                SocketAddrV4::new(ip, port)
             })
             .collect()
     }
