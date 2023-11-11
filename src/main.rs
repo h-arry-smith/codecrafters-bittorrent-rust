@@ -36,6 +36,11 @@ enum Commands {
         torrent_file: String,
         piece_index: usize,
     },
+    Download {
+        #[clap(short)]
+        out: String,
+        torrent_file: String,
+    },
 }
 
 // Usage: your_bittorrent.sh decode "<encoded_value>"
@@ -82,6 +87,15 @@ fn main() {
             let mut file = std::fs::File::create(path.clone()).expect("Failed to create file");
             tracker.download_piece(piece_index, &mut file);
             println!("Piece {} downloaded to {}.", piece_index, path);
+        }
+        Commands::Download { out, torrent_file } => {
+            let mut tracker = Tracker::new(Torrent::open(torrent_file.clone()), None);
+            tracker.handshake();
+
+            // create a file at the path
+            let mut file = std::fs::File::create(out.clone()).expect("Failed to create file");
+            tracker.download_all_pieces(&mut file);
+            println!("Downloaded {} to {}.", torrent_file, out);
         }
     }
 }

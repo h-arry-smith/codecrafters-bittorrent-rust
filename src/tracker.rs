@@ -53,13 +53,24 @@ impl Tracker {
         Handshake::from_bytes(bytes)
     }
 
-    pub fn download_piece(&mut self, piece_index: usize, file: &mut File) {
+    pub fn download_all_pieces(&mut self, file: &mut File) {
         if self.state != State::Handshake {
-            panic!("Cannot download piece in state {:?}", self.state);
+            panic!("Cannot download pieces in state {:?}", self.state);
         }
 
+        for piece_index in 0..self.torrent.info.pieces.len() {
+            eprintln!("starting {}", piece_index);
+            self.download_piece(piece_index, file);
+        }
+    }
+
+    pub fn download_piece(&mut self, piece_index: usize, file: &mut File) {
         let _piece_hash = self.torrent.info.pieces[piece_index];
-        self.state = State::WaitingForBitField;
+        if self.state == State::Handshake {
+            self.state = State::WaitingForBitField;
+        }
+
+        eprintln!("Downloading piece {}", piece_index);
 
         loop {
             #[allow(clippy::single_match)]
@@ -92,6 +103,7 @@ impl Tracker {
                     let mut block_index = 0;
 
                     while block_index < blocks_to_download {
+                        eprintln!("downloading block {}", block_index);
                         let payload: Vec<u8> = {
                             let mut payload: Vec<u8> = Vec::new();
                             let piece_index = piece_index as u32;
@@ -120,6 +132,8 @@ impl Tracker {
                     self.state = State::Finish
                 }
                 State::Finish => {
+                    eprintln!("finish {}", piece_index);
+                    self.state = State::Download;
                     break;
                 }
                 _ => {}
